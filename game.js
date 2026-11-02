@@ -137,7 +137,7 @@ function nextQ() {
   do { q = Logic.gen(R.game, R.fixedLv !== undefined ? R.fixedLv : rec(R.game).lv, S.unit); } while (R.lastKey === JSON.stringify(q) && guard++ < 8);
   R.lastKey = JSON.stringify(q);
   R.q = q; R.tries = 0;
-  VIEWS[R.game](q);
+  conceptThen(q, () => VIEWS[R.game](q));
 }
 // 一題結束：grade 2 第一次就很棒、1 第二次或差一點、0 沒答出來
 const reveal = sel => setTimeout(() => { const e = document.querySelector(sel); if (e) e.scrollIntoView({ block: 'nearest' }); }, 40); // 等注音排好才捲動，字變高才不會又把按鈕擠出去
@@ -171,13 +171,14 @@ function frame(promptHtml, stageHtml, extra) {
     <div class="top">
       <button class="icon-btn" id="home" aria-label="回地圖">⌂</button>
       <div class="dots">${dots}</div><span class="sem">${semOf(R.q)}</span>
-      <button class="icon-btn" id="say" aria-label="唸題目">🔊</button>
+      ${conceptsOf(R.game).length ? '<button class="icon-btn" id="cpt" aria-label="新概念小故事">💡</button>' : ''}<button class="icon-btn" id="say" aria-label="唸題目">🔊</button>
     </div>
     <div class="say-row">${artImg(R.boss ? 'mimi' : R.daily ? 'liang' : STORY[R.game].who, 'say-who')}<div class="prompt" id="prompt">${promptHtml}</div></div>
     <div class="stage" id="stage">${stageHtml}</div>
     <div class="msg" id="msg"></div>
     ${extra || ''}
     <div class="actions" id="actions"></div>`;
+  { const c5 = document.getElementById('cpt'); if (c5) c5.onclick = () => viewConcepts(R.game, () => VIEWS[R.game](R.q)); }
   document.getElementById('home').onclick = () => { R = null; go(''); };
   document.getElementById('say').onclick = () => speak(plainText(document.getElementById('prompt')));
 }
@@ -293,8 +294,9 @@ function viewPractice() {
     const ts = practiceTopics().filter(t => t[0] === k);
     return ts.length ? `<h3 class="pg-h">${GAMES[k].name}<span class="sem">${GAMES[k].sem}</span></h3><div class="pg">${ts.map(t => `<button class="pg-btn" data-g="${t[0]}" data-l="${t[1]}"><span class="sem">${t[3] >= 11 ? '五下' : '五上'}</span>${nums(t[2])}</button>`).join('')}</div>` : '';
   }).join('');
-  $app.innerHTML = `<div class="top"><button class="icon-btn" id="home" aria-label="回地圖">⌂</button><h2 class="page-h">練習場</h2></div><p class="tag">想多練哪一個？</p><h3 class="pg-h">單位的量感</h3><div class="pg">${Object.entries(LESSONS).map(([k, L]) => `<button class="pg-btn" data-ud="${k}"><span class="sem">${L.sem}</span>${L.title}</button>`).join("")}</div>${groups}`;
+  $app.innerHTML = `<div class="top"><button class="icon-btn" id="home" aria-label="回地圖">⌂</button><h2 class="page-h">練習場</h2></div><p class="tag">想多練哪一個？</p><button class="lesson-entry" id="cptAll"><span>💡</span><b>新概念小故事</b><small>可以重看</small></button><h3 class="pg-h">單位的量感</h3><div class="pg">${Object.entries(LESSONS).map(([k, L]) => `<button class="pg-btn" data-ud="${k}"><span class="sem">${L.sem}</span>${L.title}</button>`).join("")}</div>${groups}`;
   document.getElementById('home').onclick = () => go('');
+  document.getElementById('cptAll').onclick = () => viewConcepts(null, viewPractice);
   document.querySelectorAll('.pg-btn[data-g]').forEach(b => b.onclick = () => startRound(b.dataset.g, { lv: +b.dataset.l }));
   document.querySelectorAll('[data-ud]').forEach(b => b.onclick = () => runDrill(b.dataset.ud, viewPractice));
 }
@@ -1742,6 +1744,167 @@ function labPic(X, k) { // 單位要看得到它本來的樣子：角就是角�
   return dayBar(Math.min(k * X.each * 60, 1439), 0);
 }
 const LESSON_BEFORE = { poly: ['deg'], para: ['m2'], cuboid: ['m2'], ttime: ['time'], bigunit: ['land', 'ton'], capacity: ['cap'], volume: ['m3'] };
+/* ---------- 新概念小故事：情境提問 → 動手試（不出現新詞）→ 命名 → 換情境用新詞答一題 ---------- */
+const T = w => `<b class="term">${w}</b>`;
+const cBar = (n, a, c) => barRow(n, a, c || '#6ea8dc');
+const tri5 = (P, lab) => `<svg class="g5" style="max-height:130px" viewBox="0 0 320 170"><polygon points="${polyStr(P)}" fill="#fff0cf" stroke="#7a5b2e" stroke-width="3"/>${lab || ''}</svg>`;
+const triAngles = P => { const a = Math.round(ptAng(P[2], P[0], P[1])), b = Math.round(ptAng(P[0], P[1], P[2])); return [a, b, 180 - a - b]; };
+const paraCut = t => { const W = 180, H = 90, S = 50, x = 40, y = 15, d = t * W; return `<svg class="g5" style="max-height:170px" viewBox="0 0 320 125"><polygon points="${x + S},${y} ${x + W + S},${y} ${x + W},${y + H} ${x + S},${y + H}" fill="#cfe6c6" stroke="#4a8a3e" stroke-width="2"/><polygon points="${x + d},${y + H} ${x + S + d},${y} ${x + S + d},${y + H}" fill="#f4a9a0" stroke="#d6476b" stroke-width="2"/><line x1="${x + S}" x2="${x + S}" y1="${y}" y2="${y + H}" stroke="#d6476b" stroke-width="3"/><text x="${x + W / 2 + S / 2}" y="${y + H + 17}" text-anchor="middle" class="ax">下面這條</text></svg>`; };
+const twoPies = (n, a, m, b) => `<div class="vs two5">${pieSvg(n, Array.from({ length: n }, (_, i) => i < a ? 'a' : ''))}${pieSvg(m, Array.from({ length: m }, (_, i) => i < b ? 'b' : ''))}</div>`;
+const lampPair = (A, B) => `<div class="lamps"><div><span class="lamp ${A ? 'on' : ''}" style="--c:#e0455a"></span><small>紅燈</small></div><div><span class="lamp ${B ? 'on' : ''}" style="--c:#3fae5a"></span><small>綠燈</small></div></div>`;
+const timeline = (lim, on) => `<div class="numgrid">${Array.from({ length: lim }, (_, i) => `<span class="ng ${on.includes(i + 1) ? 'on' : ''}">${i + 1}</span>`).join('')}</div>`;
+const tanks3 = L => `<div class="tanks">${L.map(v => `<div class="tank"><div class="wtr">${'<i></i>'.repeat(v)}</div><b class="num">${v}</b></div>`).join('')}</div>`;
+const symHalf = [[0, -1], [3, -3], [4, -1], [2, 1], [3, 3], [0, 2]];
+const symPic = p => { const pts = fullShape(symHalf, 'v'), g = pts.map(k => [2 * p - k[0], k[1]]); return gridBg(`<polygon points="${polyStr(pts.map(gp))}" fill="#a9d0f0" stroke="#2f5f9e" stroke-width="2"/><polygon points="${polyStr(g.map(gp))}" fill="#f4a9a0" fill-opacity=".45" stroke="#d6476b" stroke-dasharray="5 4"/><line x1="${gp([p, -4])[0]}" y1="${gp([p, -4])[1]}" x2="${gp([p, 4])[0]}" y2="${gp([p, 4])[1]}" stroke="#d6476b" stroke-width="4"/>`); };
+const ptPic = x => { const pts = fullShape([[0, -3], [3, -1], [2, -1], [2, 3], [0, 3]], 'v'), a = gp([2, 1]), b = gp([x, 1]); return gridBg(`<polygon points="${polyStr(pts.map(gp))}" fill="#fff0cf" stroke="#7a5b2e" stroke-width="2"/><line x1="${gp([0, -4])[0]}" y1="${gp([0, -4])[1]}" x2="${gp([0, 4])[0]}" y2="${gp([0, 4])[1]}" stroke="#d6476b" stroke-width="3"/><circle cx="${a[0]}" cy="${a[1]}" r="9" fill="#d6476b"/><circle cx="${b[0]}" cy="${b[1]}" r="9" fill="${x === -2 ? '#3fae5a' : '#aab3c2'}"/>`); };
+const distPic = t => { const W = 270, H = 90, cut = W * 40 / 45, x = cut * t; return `<svg class="g5" style="max-height:170px" viewBox="-24 -22 310 122"><rect width="${W}" height="${H}" fill="${t >= 1 ? '#f4a9a0' : '#fff0cf'}" stroke="#7a5b2e" stroke-width="2"/>${t >= 1 ? `<rect x="${cut}" width="${W - cut}" height="${H}" fill="#a9d0f0" stroke="#7a5b2e"/><text x="${cut / 2}" y="-6" text-anchor="middle" class="ax">40</text><text x="${cut + (W - cut) / 2}" y="-6" text-anchor="middle" class="ax">5</text>` : '<text x="135" y="-6" text-anchor="middle" class="ax">45</text>'}<line x1="0" x2="${W}" y1="30" y2="30" stroke="#7a5b2e" stroke-opacity=".4"/><line x1="0" x2="${W}" y1="60" y2="60" stroke="#7a5b2e" stroke-opacity=".4"/><text x="-8" y="50" text-anchor="end" class="ax">3</text><line x1="${x}" x2="${x}" y1="-14" y2="${H + 6}" stroke="#d6476b" stroke-width="4"/></svg>`; };
+const groupPic = st => `<div class="grps">${st ? Array.from({ length: 3 }, (_, i) => `<span class="grp ${st > 1 && i === 0 ? 'on' : ''}">🍎🍎🍎🍎</span>`).join('') : `<span class="grp">${'🍎'.repeat(12)}</span>`}</div>`;
+const netRects = k => { const C = ['#f4a9a0', '#a9d0f0', '#b7e0a8'], W = 90, D = 40, H = 50, y0 = 4, R0 = [[D, y0 + D, W, H, 1], [D, y0 + D + H + D, W, H, 1], [D, y0, W, D, 0], [D, y0 + D + H, W, D, 0], [0, y0 + D, D, H, 2], [D + W, y0 + D, D, H, 2]]; return `<svg class="g5" style="max-height:210px" viewBox="0 0 ${2 * D + W + 8} ${2 * D + 2 * H + 12}">${R0.map(r => `<rect x="${r[0]}" y="${r[1]}" width="${r[2]}" height="${r[3]}" fill="${r[4] < k ? C[r[4]] : '#f4f6fa'}" stroke="#33405a" stroke-width="1.5"/>`).join('')}</svg>`; };
+const faceCols = i => i ? ['#fdeec6', '#fdeec6', '#e0455a', '#c8d7e8', '#fdeec6', '#fdeec6'] : null;
+const cupPic = k => `<svg class="g5" style="max-height:190px" viewBox="0 0 220 180"><rect x="30" y="10" width="160" height="160" rx="6" fill="#c9a36a" stroke="#33405a" stroke-width="2"/><rect x="50" y="10" width="120" height="140" fill="${k ? '#a9d0f0' : '#fff'}"/>${k > 1 ? '<text x="110" y="85" text-anchor="middle" class="ax">水只裝在這裡</text>' : ''}</svg>`;
+const NET_A = [[0, 1], [1, 0], [1, 1], [1, 2], [1, 3], [2, 1]], NET_BAD = [[0, 0], [0, 1], [1, 0], [1, 1], [2, 0], [2, 1]];
+const CONCEPTS = [
+  { key: 'factor', title: '因數', terms: ['因數'], who: 'octopus', game: 'factor', when: ['factor:rect', 'factor:fit'],
+    ask: '12 塊地磚要排成整齊的長方形，有幾種排法？', tryIt: '拖一拖，每排放幾塊試試。', states: [5, 4, 3], pic: w => tilesSvg(12, w), note: w => 12 % w ? `每排 ${w} 塊，最後一排排不滿` : `每排 ${w} 塊，排 ${12 / w} 排，剛好排完！`,
+    found: '有的能剛好排完，有的不行。1、2、3、4、6、12 都能剛好排完。', name: `能剛好排完的每排塊數 1、2、3、4、6、12，就叫 12 的${T('因數')}。`, loop: [1, 2],
+    check: { q: '18 顆雞蛋，每盒裝 4 顆。4 是 18 的因數嗎？', pic: () => `<div class="crates">${'<span class="crate"><b class="num">4</b><small>顆</small></span>'.repeat(4)}<span class="crate mini"><b class="num">2</b></span></div>`, opts: ['是', '不是'], a: 1, why: '裝 4 盒還剩 2 顆，沒有剛好裝完。', ok: '對了！沒有剛好裝完，4 不是 18 的因數。' } },
+  { key: 'multiple', title: '倍數', terms: ['倍數'], who: 'octopus', game: 'factor', when: ['factor:multi'],
+    ask: '號誌燈每 3 秒亮一次。它什麼時候會亮？', tryIt: '往右拖時間，每次亮燈都記下來。', states: [3, 6, 9], pic: t => timeline(15, Array.from({ length: t / 3 }, (_, i) => (i + 1) * 3)), note: t => `第 ${t} 秒亮了`,
+    found: '3、6、9⋯⋯每次都多 3，一直數也數不完。', name: `3、6、9、12⋯⋯亮燈的這些時間，就叫 3 的${T('倍數')}。`, loop: [0, 1, 2],
+    check: { q: '接駁車每 4 分鐘來一班。哪一個是 4 的倍數？', pic: () => timeline(24, [4, 8, 12]), opts: ['18', '20', '22'], a: 1, why: '從 4 開始一直加 4，會碰到哪一個？', ok: '對了！4×5＝20，20 是 4 的倍數。' } },
+  { key: 'comf', title: '公因數', terms: ['公因數', '最大公因數'], who: 'octopus', game: 'factor', when: ['factor:comf', 'factor:pave'],
+    ask: '12 塊紅磚、18 塊藍磚，兩種都要排成每排一樣多，都不能剩。每排可以放幾塊？', tryIt: '拖一拖，試試每排幾塊。', states: [5, 2, 6], pic: w => `<div class="vs two5"><span style="flex:1">${tilesSvg(12, w)}</span><span style="flex:1">${tilesSvg(18, w)}</span></div>`, note: w => 12 % w === 0 && 18 % w === 0 ? `每排 ${w} 塊：兩種都剛好` : `每排 ${w} 塊：排不整齊`,
+    found: '1、2、3、6 兩種都排得剛好，最多每排 6 塊。', name: `兩個數都能剛好分完的 1、2、3、6，叫 ${'12 和 18 的'}${T('公因數')}；最大的 6，叫${T('最大公因數')}。`, loop: [1, 2],
+    check: { q: '8 公分和 12 公分的繩子，都剪成同樣長、不能剩，最長剪幾公分？（8 和 12 的最大公因數）', pic: () => `${cBar(8, 8, '#f4a9a0')}${cBar(12, 12, '#a9d0f0')}`, opts: ['2', '4', '8'], a: 1, why: '8 分得完、12 也要分得完，找最大的。', ok: '對了！4 是 8 和 12 的最大公因數。' } },
+  { key: 'coml', title: '公倍數', terms: ['公倍數', '最小公倍數'], who: 'octopus', game: 'factor', when: ['factor:lamp'],
+    ask: '紅燈每 2 秒亮一次，綠燈每 3 秒亮一次。現在一起開始，下次什麼時候一起亮？', tryIt: '往右拖時間看看。', states: [2, 3, 6], pic: t => lampPair(t % 2 === 0, t % 3 === 0), note: t => t === 6 ? `第 ${t} 秒：一起亮了！` : `第 ${t} 秒：只有${t % 2 === 0 ? '紅燈' : '綠燈'}亮`,
+    found: '第 6 秒一起亮，之後第 12、18 秒也會一起亮。', name: `6、12、18⋯⋯兩盞燈一起亮的時間，叫 2 和 3 的${T('公倍數')}；最小的 6，叫${T('最小公倍數')}。`, loop: [0, 1, 2],
+    check: { q: '甲車每 4 分鐘、乙車每 6 分鐘一班。第一次同時到是幾分鐘後？（4 和 6 的最小公倍數）', pic: () => timeline(24, [4, 8, 12]), opts: ['8', '12', '24'], a: 1, why: '數 4 的倍數，看哪一個也是 6 的倍數。', ok: '對了！12 是 4 和 6 的最小公倍數。' } },
+  { key: 'sum180', title: '內角和', terms: ['內角和'], who: 'goat', game: 'poly', when: ['poly:sum', 'poly:cut', 'poly:quad'],
+    ask: '三角形花圃的形狀可以變來變去。三個角合起來會不會變？', tryIt: '拖一拖，換三種形狀，再把角撕下來拼。', states: [[[60, 150], [270, 150], [130, 30]], [[30, 150], [290, 150], [60, 60]], [[100, 150], [220, 150], [160, 15]]], pic: P => `${tri5(P)}${`<div class="q5">${wedges(triAngles(P))}</div>`}`, note: P => { const [a, b, c] = triAngles(P); return `${a}＋${b}＋${c}＝180，拼成一條直線`; },
+    found: '形狀一直變，三個角撕下來，都剛好拼成一條直線。', name: `一個圖形裡面所有的角加起來，叫${T('內角和')}。三角形的內角和都是 180 度。`, loop: [0, 1, 2],
+    check: { q: '三角旗有兩個角是 50 度和 60 度。第三個角幾度？', pic: () => `<div class="q5">${wedges([50, 60])}</div>`, opts: ['70', '80', '90'], a: 0, why: '內角和是 180 度，還缺多少？', ok: '對了！180－50－60＝70 度。' } },
+  { key: 'regular', title: '正多邊形', terms: ['正多邊形'], who: 'goat', game: 'poly', when: ['poly:regular'],
+    ask: '圍牆要每邊一樣長，每個轉角也一樣大。哪一種才行？', tryIt: '拖一拖，一種一種量。', states: [0, 1, 2], pic: i => tri5([[[60, 50], [260, 50], [260, 130], [60, 130]], [[160, 10], [240, 85], [160, 160], [80, 85]], [[100, 25], [220, 25], [220, 145], [100, 145]]][i]), note: i => ['長方形：角一樣大，邊不一樣長', '菱形：邊一樣長，角不一樣大', '正方形：邊和角都一樣！'][i],
+    found: '只有邊和角都各自一樣的才行。', name: `每邊一樣長、每個角也一樣大的多邊形，叫${T('正多邊形')}。`, loop: [2],
+    check: { q: '蜂巢的一格，六個邊一樣長，六個角也一樣大。它是正多邊形嗎？', pic: () => `<svg class="g5" style="max-height:120px" viewBox="0 0 200 200"><polygon points="${polyStr(Array.from({ length: 6 }, (_, i) => { const t = (i * 60 - 90) * Math.PI / 180; return [100 + 85 * Math.cos(t), 100 + 85 * Math.sin(t)]; }))}" fill="#f7dc8c" stroke="#a9702a" stroke-width="4"/></svg>`, opts: ['是', '不是'], a: 0, why: '邊和角都一樣嗎？', ok: '對了！它是正六邊形。' } },
+  { key: 'expand', title: '擴分', terms: ['擴分'], who: 'rabbit', game: 'ext', when: ['ext:slice'],
+    ask: '半個披薩再多切幾刀，吃到的會變多嗎？', tryIt: '拖一拖，切細一點。', states: [1, 2, 4], pic: k => `<div class="vs">${pieSvg(2 * k, Array.from({ length: 2 * k }, (_, i) => i < k ? 'a' : ''))}</div>`, note: k => `${k}/${2 * k} 個：塗色的大小都一樣`,
+    found: '塊數變多了，塗色的大小沒有變。1/2＝2/4＝4/8。', name: `分子分母一起變大、份量不變，這樣切細就叫${T('擴分')}。`, loop: [0, 1, 2],
+    check: { q: '2/3 片巧克力切細成 6 塊，塗色的是幾塊？（把 2/3 擴分）', pic: () => `<div class="vs">${foodSvg(['巧克力', 'bar', '片'], 3, 2)}</div>`, opts: ['2', '4', '6'], a: 1, why: '每塊切成 2 小塊，塗色的 2 塊變幾塊？', ok: '對了！2/3＝4/6。' } },
+  { key: 'reduce', title: '約分', terms: ['約分', '最簡分數'], who: 'rabbit', game: 'ext', when: ['ext:merge', 'ext:lowest'],
+    ask: '4/8 個披薩切得太碎了，把小塊併起來，能變幾塊？', tryIt: '拖一拖，兩塊兩塊併。', states: [8, 4, 2], pic: n => `<div class="vs">${pieSvg(n, Array.from({ length: n }, (_, i) => i < n / 2 ? 'a' : ''))}</div>`, note: n => `${n / 2}/${n} 個${n === 2 ? '，不能再併了！' : ''}`,
+    found: '併到 1/2 就不能再併了，塗色的大小一直沒變。', name: `分子分母一起變小叫${T('約分')}。約到不能再約的 1/2，叫${T('最簡分數')}。`, loop: [0, 1, 2],
+    check: { q: '6/9 盤蛋糕的最簡分數是哪一個？', pic: () => `<div class="vs">${foodSvg(['蛋糕', 'bar', '盤'], 9, 6)}</div>`, opts: ['3/6', '2/3', '6/9'], a: 1, why: '6 和 9 都能分成 3 份。', ok: '對了！6/9 約分成 2/3。' } },
+  { key: 'common', title: '通分', terms: ['通分'], who: 'rabbit', game: 'ext', when: ['ext:common', 'ext:cmp', 'uadd:add', 'uadd:sub', 'uadd:mixed', 'uadd:borrow', 'uadd:enough'],
+    ask: '1/2 個和 1/3 個披薩，塊的大小不同，哪一個多？多多少？', tryIt: '拖一拖，把兩個切細，切到塊一樣大。', states: [[1, 1], [2, 1], [3, 2]], pic: ([x, y]) => twoPies(2 * x, x, 3 * y, y), note: ([x, y]) => 2 * x === 3 * y ? `都切成 ${2 * x} 塊：${x} 塊和 ${y} 塊，比得出來了！` : `${2 * x} 塊和 ${3 * y} 塊，還不一樣`,
+    found: '切成一樣的塊數，塊就一樣大，可以直接數了。', name: `把幾個分數切成一樣的分母，就叫${T('通分')}。`, loop: [0, 2],
+    check: { q: '一杯燃料 1/2 公升、一杯 1/4 公升。通分時，都切成幾格最方便？', pic: () => `<div class="vs two5">${vesselSvg(['', '', 'cup'], 2, 1)}${vesselSvg(['', '', 'cup'], 4, 1)}</div>`, opts: ['2', '4', '6'], a: 1, why: '把 1/2 切細，什麼時候和 1/4 一樣細？', ok: '對了！1/2＝2/4，都切成 4 格。' } },
+  { key: 'sym', title: '線對稱', terms: ['線對稱圖形', '對稱軸'], who: 'crab', game: 'sym', when: ['sym:axis', 'sym:count'],
+    ask: '蝴蝶貼紙要對摺，兩邊要完全重疊。摺線要放在哪裡？', tryIt: '拖紅線試試看。', states: [-1, 1, 0], pic: symPic, note: p => p === 0 ? '完全重疊！' : '影子沒有疊好', found: '只有摺在正中間，兩邊才完全重疊。', name: `沿一條線對摺能完全重疊的圖形，叫${T('線對稱圖形')}；那條摺線叫${T('對稱軸')}。`, loop: [0, 2],
+    check: { q: '停車格是平行四邊形，直的橫的摺都疊不起來。它是線對稱圖形嗎？', pic: () => `<svg class="g5" style="max-height:120px" viewBox="0 0 200 200"><polygon points="70,60 170,60 130,140 30,140" fill="#a9d0f0" stroke="#2f5f9e" stroke-width="2"/></svg>`, opts: ['是', '不是'], a: 1, why: '線對稱要能完全重疊。', ok: '對了！摺不重疊，就不是線對稱圖形。' } },
+  { key: 'sympt', title: '對稱點', terms: ['對稱點'], who: 'crab', game: 'sym', when: ['sym:point', 'sym:half', 'sym:prop'],
+    ask: '房子對摺時，紅點會碰到另一邊的哪裡？', tryIt: '拖一拖，試三個位置。', states: [-1, -3, -2], pic: ptPic, note: x => x === -2 ? '碰到了！一樣高、一樣遠' : '摺過去碰不到', found: '紅點離摺線 2 格，碰到的點也離摺線 2 格。', name: `對摺時碰在一起的兩個點，叫${T('對稱點')}。它們到對稱軸一樣遠。`, loop: [2],
+    check: { q: '窗花上一個點離對稱軸 3 格，它的對稱點離對稱軸幾格？', pic: () => gridBg(`<line x1="${gp([0, -4])[0]}" y1="${gp([0, -4])[1]}" x2="${gp([0, 4])[0]}" y2="${gp([0, 4])[1]}" stroke="#d6476b" stroke-width="3"/><circle cx="${gp([3, 0])[0]}" cy="${gp([3, 0])[1]}" r="9" fill="#d6476b"/>`), opts: ['2', '3', '6'], a: 1, why: '對摺要碰在一起，要一樣遠。', ok: '對了！都是 3 格。' } },
+  { key: 'avg', title: '平均', terms: ['平均'], who: 'raccoon', game: 'mix', when: ['mix:avg'],
+    ask: '三個水塔 5、1、3 格水，高高低低。如果一樣高，每個會是幾格？', tryIt: '拖一拖，從高的倒到低的。', states: [[5, 1, 3], [4, 2, 3], [3, 3, 3]], pic: tanks3, note: L => L.every(x => x === L[0]) ? '都一樣高了！每個 3 格' : '還高高低低', found: '水沒有變多變少，只是推平了。全部 9 格，分成 3 份。', name: `高的補低的、推到一樣多，這個數就是${T('平均')}。9÷3＝3。`, loop: [0, 1, 2],
+    check: { q: '三天存了 2、4、6 元。平均每天存幾元？', pic: () => tanks3([2, 4, 6]), opts: ['3', '4', '6'], a: 1, why: '6 分 2 給 2，推平看看。', ok: '對了！12÷3＝4 元。' } },
+  { key: 'dist', title: '分配律', terms: ['分配律'], who: 'raccoon', game: 'mix', when: ['mix:dist', 'mix:near'],
+    ask: '便當 40 元、水 5 元，買 3 份，有幾種算法？', tryIt: '拖紅線，把一整塊切開。', states: [0, .5, 1], pic: distPic, note: t => t >= 1 ? '切成 40×3 和 5×3 兩塊' : '整塊是 45×3', found: '可以整份一起算，也可以分開再加，總數一樣。', name: `（40＋5）×3＝40×3＋5×3，先合再乘和分開乘再加一樣，叫${T('分配律')}。`, loop: [0, 2],
+    check: { q: '每排 20 塊紅磚、3 塊藍磚，鋪 4 排。用分配律，哪一個算法對？', pic: () => `${cBar(23, 20, '#f4a9a0')}${cBar(23, 20, '#f4a9a0')}`, opts: ['20×4＋3×4', '20×4＋3', '20＋3×4'], a: 0, why: '紅的和藍的都有 4 排。', ok: '對了！紅、藍都要乘 4。' } },
+  { key: 'baseh', title: '底和高', terms: ['底', '高'], who: 'sheep', game: 'para', when: ['para:para', 'para:tri', 'para:slide', 'para:trap', 'para:sym', 'para:back'],
+    ask: '這塊歪歪的地，要量哪兩條線才算得出大小？', tryIt: '拖一拖，把左邊的三角形剪下來移到右邊。', states: [0, .5, 1], pic: paraCut, note: t => t >= 1 ? '變成長方形了！' : '移動中⋯⋯', found: '變成的長方形，長是下面這條線，寬是紅色直直的線，不是斜的那條。', name: `下面這條叫${T('底')}，和底垂直、紅色這條叫${T('高')}。`, loop: [0, 2],
+    check: { q: '屋頂是三角形，下面 8 公尺，斜邊 6 公尺，和下面垂直的線 4 公尺。高是幾公尺？', pic: () => tri5([[40, 150], [280, 150], [160, 40]], '<line x1="160" x2="160" y1="40" y2="150" stroke="#d6476b" stroke-width="3" stroke-dasharray="5 4"/><text x="165" y="100" class="ax">4</text><text x="80" y="90" class="ax">6</text><text x="160" y="168" text-anchor="middle" class="ax">8</text>'), opts: ['4', '6', '8'], a: 0, why: '高要和底垂直，斜的不算。', ok: '對了！高是 4 公尺。' } },
+  { key: 'plane', title: '面的平行和垂直', terms: ['平行', '垂直'], who: 'bee', game: 'cuboid', when: ['cuboid:spin', 'cuboid:life'],
+    ask: '貨櫃的紅色面和其他面，哪些永遠碰不到？哪些碰在一起？', tryIt: '拖一拖，轉貨櫃看。', states: [30, 120, 210], pic: y => box3d(4, 3, 3, y, 22, { colors: faceCols(1) }), note: y => y === 210 ? '藍色面在紅色面的對面，碰不到' : '旁邊的面都和紅色面碰成直角', found: '對面的面永遠碰不到；旁邊的面像牆和地板。', name: `對面的面互相${T('平行')}；相鄰的面互相${T('垂直')}。`, loop: [0, 1, 2],
+    check: { q: '教室的地板和天花板是什麼關係？', pic: () => '<div class="u-big">🏫</div>', opts: ['平行', '垂直'], a: 0, why: '它們會碰到嗎？', ok: '對了！地板和天花板平行。' } },
+  { key: 'net', title: '展開圖', terms: ['展開圖'], who: 'bee', game: 'cuboid', when: ['cuboid:net', 'cuboid:opp'],
+    ask: '紙盒可以攤平裝進袋子裡。攤開來長什麼樣子？', tryIt: '拖一拖，把紙盒打開。', states: [1, .5, 0], pic: t => foldNet(NET_A, t), note: t => t === 0 ? '六個面連在一起，平平的' : '打開中⋯⋯', found: '六個面攤成一張平的紙，摺回去又是盒子。', name: `立體攤平後的這張圖，叫${T('展開圖')}。`, loop: [0, 1, 2],
+    check: { q: '這張圖能摺成正方體的展開圖嗎？', pic: () => foldNet(NET_BAD, 0), opts: ['能', '不能'], a: 1, why: '想像摺起來，有沒有面疊在一起？', ok: '對了！會疊在一起，摺不成。' } },
+  { key: 'surface', title: '表面積', terms: ['表面積'], who: 'bee', game: 'cuboid', when: ['cuboid:area', 'cuboid:cube'],
+    ask: '面紙盒要包住全部，要多少包裝紙？', tryIt: '拖一拖，一對面一對面塗。', states: [1, 2, 3], pic: netRects, note: k => `塗了 ${k * 2} 面`, found: '六個面都塗到了，全部加起來就是要的紙。', name: `立體外面所有面的面積加起來，叫${T('表面積')}。`, loop: [0, 1, 2],
+    check: { q: '骰子每面 4 平方公分，表面積是多少？', pic: () => '<div class="u-big">🎲</div>', opts: ['4', '16', '24'], a: 2, why: '骰子有幾個面？', ok: '對了！4×6＝24 平方公分。' } },
+  { key: 'ffrac', title: '分數倍', terms: ['分數倍'], who: 'rabbit', game: 'fcalc', when: ['fcalc:of', 'fcalc:times', 'fcalc:area', 'fcalc:fdiv', 'fcalc:cmp'],
+    ask: '12 顆蘋果，拿 3 份裡的 1 份，是幾顆？', tryIt: '拖一拖，分成 3 份，再圈 1 份。', states: [0, 1, 2], pic: groupPic, note: s => ['12 顆', '每份 4 顆', '圈了 4 顆'][s], found: '分 3 份拿 1 份，就是 4 顆，比 12 少。', name: `「12 的 1/3」也可以說 12 的 1/3 倍，寫成 12×1/3。乘一個分數叫${T('分數倍')}。`, loop: [0, 1, 2],
+    check: { q: '20 元的 1/2 倍是幾元？', pic: () => cBar(2, 1, '#f7dc8c'), opts: ['10', '20', '40'], a: 0, why: '分 2 份拿 1 份。', ok: '對了！20×1/2＝10 元。' } },
+  { key: 'thou', title: '千分位', terms: ['千分位'], who: 'pelican', game: 'decimal', when: ['decimal:thou', 'decimal:point', 'decimal:shift', 'decimal:rel'],
+    ask: '金屬片比 0.01 公分還薄，要怎麼寫？', tryIt: '拖一拖，一層一層切細。', states: [1, 2, 3], pic: k => `${cBar(1, 1, '#a9d0f0')}${k >= 1 ? cBar(10, 1, '#6ea8dc') : ''}${k >= 2 ? cBar(10, 1, '#f0a03c') : ''}${k >= 3 ? cBar(10, 1, '#3fae5a') : ''}`, note: k => ['', '切 10 份：一份 0.1', '再切 10 份：一份 0.01', '再切 10 份：一份 0.001'][k], found: '1 切 10 份，再切 10 份，再切 10 份，就是 0.001。', name: `小數點後第三位，記幾個 0.001，叫${T('千分位')}。`, loop: [0, 1, 2],
+    check: { q: '3.275 的 5 在哪一位？', pic: () => '<div class="digits big"><span class="dg">3</span><b>.</b><span class="dg">2</span><span class="dg">7</span><span class="dg l">5</span></div>', opts: ['十分位', '百分位', '千分位'], a: 2, why: '小數點後第幾位？', ok: '對了！第三位是千分位。' } },
+  { key: 'zhao', title: '億和兆', terms: ['兆'], who: 'pelican', game: 'decimal', when: ['decimal:chunk', 'decimal:zero'],
+    ask: '星星好遠！3 0000 0000 0000 公里，怎麼念？', tryIt: '拖一拖，從右邊每 4 位切一刀。', states: [1, 2, 3], pic: k => { const g = ['3', '0000', '0000', '0000']; return `<div class="digits">${g.map((x, i) => (i && 3 - i < k ? '<b class="cut5">｜</b>' : '') + x).join('')}</div>`; }, note: k => ['', '第一刀是萬', '第二刀是億', '第三刀是一個新的單位'][k], found: '萬、億，再往左還有一個新單位。一萬個億才到它。', name: `一萬個億叫 1 ${T('兆')}。這個數念作 3 兆。`, loop: [0, 1, 2],
+    check: { q: '5 0000 0000 0000 念作什麼？', pic: () => '<div class="digits">5｜0000｜0000｜0000</div>', opts: ['5 億', '5 兆', '50 萬'], a: 1, why: '第三刀前面是什麼單位？', ok: '對了！5 兆。' } },
+  { key: 'sector', title: '扇形', terms: ['扇形', '圓心角'], who: 'bee', game: 'sector', when: ['sector:drag', 'sector:frac', 'sector:read', 'sector:part', 'sector:draw'],
+    ask: '披薩切一片下來，要怎麼說它有多大？', tryIt: '拖一拖，打開不同大小。', states: [45, 90, 200], pic: d => sectorSvg(d, { knob: true }), note: d => `尖尖的地方張開 ${d} 度`, found: '從圓心張開的角越大，切下來的片越大。', name: `兩條半徑和一段圓周圍成的形狀叫${T('扇形')}；圓心這個角叫${T('圓心角')}。`, loop: [0, 1, 2],
+    check: { q: '1/4 圓的花圃，圓心角幾度？', pic: () => sectorSvg(90), opts: ['45', '90', '180'], a: 1, why: '一圈 360 度分 4 份。', ok: '對了！360÷4＝90 度。' } },
+  { key: 'ratio', title: '比率', terms: ['比率'], who: 'mimi', game: 'ratio', when: ['ratio:rate'],
+    ask: '5 個人有 3 個人舉手。10 個人有 6 個人舉手。哪一組比較多人贊成？', tryIt: '拖一拖，每 5 人分一組看。', states: [[5, 3], [10, 6], [20, 12]], pic: ([n, a]) => `<div class="people">${Array.from({ length: n }, (_, i) => `<span class="pp ${i < a ? 'on' : ''}">${i < a ? '😀' : '🙂'}</span>`).join('')}</div>`, note: ([n, a]) => `${n} 人裡有 ${a} 人，每 5 人都有 3 人`, found: '人數不同，但都是每 5 人有 3 人，一樣多。', name: `部分占全部的多少，叫${T('比率')}。這裡都是 3/5。`, loop: [0, 1],
+    check: { q: '投籃 10 次進 4 次，投進的比率是多少？', pic: () => cBar(10, 4, '#3fae5a'), opts: ['4/10', '10/4', '4/14'], a: 0, why: '部分÷全部。', ok: '對了！4/10。' } },
+  { key: 'percent', title: '百分率', terms: ['百分率'], who: 'mimi', game: 'ratio', when: ['ratio:paint', 'ratio:to100', 'ratio:part'],
+    ask: '每班人數不同，要怎麼比贊成的有多少？', tryIt: '拖一拖，都想成 100 格來塗。', states: [10, 25, 35], pic: v => hundred(v), note: v => `100 格塗了 ${v} 格`, found: '都換成 100 份，就比得出來。35 格就是 100 份裡的 35 份。', name: `100 份裡的幾份，叫${T('百分率')}。35 份寫成 35%。`, loop: [0, 1, 2],
+    check: { q: '100 顆種子有 20 顆發芽。發芽的百分率是多少？', pic: () => hundred(20), opts: ['2%', '20%', '80%'], a: 1, why: '100 份裡的幾份？', ok: '對了！20%。' } },
+  { key: 'discount', title: '打折', terms: ['打折', '8 折'], who: 'mimi', game: 'ratio', when: ['ratio:off'],
+    ask: '100 元的工具，老闆說只要付 8 份。怎麼算？', tryIt: '拖一拖，切 10 份，再塗要付的。', states: [0, 4, 8], pic: k => cBar(10, k, '#6ea8dc'), note: k => k ? `付 ${k} 份，${k * 10} 元` : '切成 10 份，每份 10 元', found: '切 10 份付 8 份，只要 80 元，便宜了 20 元。', name: `切 10 份付幾份，叫${T('打折')}。付 8 份就是打 ${T('8 折')}。`, loop: [0, 1, 2],
+    check: { q: '200 元的太空衣打 9 折，要付幾元？', pic: () => cBar(10, 9, '#6ea8dc'), opts: ['20', '180', '190'], a: 1, why: '切 10 份，每份 20 元，付 9 份。', ok: '對了！180 元。' } },
+  { key: 'cheng', title: '成數', terms: ['成'], who: 'mimi', game: 'ratio', when: ['ratio:cheng'],
+    ask: '果園 10 棵樹有 6 棵結果，要怎麼用短短的話說？', tryIt: '拖一拖，一棵棵塗。', states: [2, 4, 6], pic: k => `<div class="pics5">${'🍎'.repeat(k)}${'🌳'.repeat(10 - k)}</div>`, note: k => `10 棵裡有 ${k} 棵`, found: '只要說「10 份裡的 6 份」。', name: `全部切 10 份，幾份就叫幾${T('成')}。這裡是 6 成。`, loop: [0, 1, 2],
+    check: { q: '圖書館 100 本書，3 成借出去，是幾本？', pic: () => cBar(10, 3, '#3fae5a'), opts: ['3', '30', '70'], a: 1, why: '切 10 份，每份 10 本。', ok: '對了！30 本。' } },
+  { key: 'capacity', title: '容積', terms: ['容積'], who: 'turtle', game: 'capacity', when: ['capacity:inner', 'capacity:level', 'capacity:rock', 'capacity:over'],
+    ask: '厚厚的水杯外面看很大，真的裝得下那麼多水嗎？', tryIt: '拖一拖，看水裝在哪裡。', states: [0, 1, 2], pic: cupPic, note: k => ['杯壁很厚', '水倒進去', '水碰不到杯壁裡面'][k], found: '水只裝在裡面，外面看的大小不算。', name: `容器裡面能裝的大小，叫${T('容積')}。要量裡面。`, loop: [0, 1, 2],
+    check: { q: '魚缸裡面長 10、寬 10、高 5 公分，容積是多少立方公分？', pic: () => cupPic(1), opts: ['25', '500', '1000'], a: 1, why: '量裡面的長、寬、高相乘。', ok: '對了！10×10×5＝500 立方公分。' } },
+  { key: 'prism', title: '角柱和圓柱', terms: ['角柱', '圓柱'], who: 'fox', game: 'solid', when: ['solid:count', 'solid:name', 'solid:rel', 'solid:net'],
+    ask: '大樓、帳篷、罐頭，有什麼一樣的地方？', tryIt: '拖一拖，一個一個轉。', states: [['prism', 3], ['prism', 6], ['cyl', 0]], pic: ([t, n]) => solidSvg(t, n, 30, 20), note: ([t, n]) => t === 'cyl' ? '上下是圓，側面彎彎的' : `上下是${n === 3 ? '三' : '六'}邊形，側面是長方形`, found: '上下兩面一樣大，從上到下都一樣粗。', name: `底面是多邊形的叫${T('角柱')}，底面是圓的叫${T('圓柱')}。`, loop: [0, 1, 2],
+    check: { q: '水管切下一段，上下都是圓。它是什麼？', pic: () => solidSvg('cyl', 0, 30, 20), opts: ['角柱', '圓柱'], a: 1, why: '底面是什麼形狀？', ok: '對了！圓柱。' } },
+  { key: 'pyr', title: '角錐和圓錐', terms: ['角錐', '圓錐'], who: 'fox', game: 'solid', when: ['solid:count', 'solid:name', 'solid:rel', 'solid:net'],
+    ask: '金字塔和甜筒，和柱子有什麼不一樣？', tryIt: '拖一拖，一個一個轉。', states: [['pyr', 4], ['pyr', 3], ['cone', 0]], pic: ([t, n]) => solidSvg(t, n, 30, 20), note: ([t, n]) => t === 'cone' ? '底面是圓，往上變尖' : `底面是${n === 3 ? '三' : '四'}邊形，往上變尖`, found: '只有一個底面，往上收成一個尖尖的點。', name: `底面是多邊形的尖頂叫${T('角錐')}，底面是圓的叫${T('圓錐')}。`, loop: [0, 1, 2],
+    check: { q: '尖尖的派對帽，底面是圓的。它是什麼？', pic: () => solidSvg('cone', 0, 30, 20), opts: ['角錐', '圓錐'], a: 1, why: '底面是什麼形狀？', ok: '對了！圓錐。' } },
+];
+const conceptsOf = g => CONCEPTS.filter(c => c.game === g || c.when.some(w => w.startsWith(g + ':')));
+const seenCpt = () => S.seenCpt || (S.seenCpt = {});
+let cptTimer = null;
+const cptStop = () => { if (cptTimer) { clearInterval(cptTimer); cptTimer = null; } };
+function runConcept(key, then) {
+  const C = CONCEPTS.find(c => c.key === key), L = { title: C.title, sem: GAMES[C.game].sem, who: C.who };
+  const done = () => { cptStop(); seenCpt()[key] = 1; save(); then(); };
+  const skipBtn = '<button class="skip5" id="skipc">跳過</button>';
+  const wire = () => { document.getElementById('out').onclick = () => { cptStop(); R = null; go(''); }; document.getElementById('skipc').onclick = done; };
+  function op() { // 第二步：動手試，全程不出現新詞
+    cptStop();
+    lessonFrame(L, `${C.ask}<br><small>${C.tryIt}</small>`, `<div class="cp" id="cp"></div><div class="trail" id="ct"></div>${skipBtn}`); wire();
+    const seen = new Set(); let i = -1, over = false;
+    const nextBtn = () => { document.getElementById('actions').innerHTML = over ? '<button class="btn" id="nm">這叫什麼？</button>' : '<button class="btn" id="tn">試下一個</button>'; if (over) document.getElementById('nm').onclick = named; else document.getElementById('tn').onclick = () => show((i + 1) % C.states.length); };
+    const show = k => { i = k; setEl('cp', C.pic(C.states[k])); setEl('ct', C.note(C.states[k])); sfx.hop(); seen.add(k); if (seen.size === C.states.length && !over) { over = true; setMsg(C.found, 'good'); sfx.ok(); } nextBtn(); };
+    show(0);
+    dragOn(document.getElementById('cp'), x => { const k = clamp(Math.floor(x * C.states.length), 0, C.states.length - 1); if (k !== i) show(k); });
+  }
+  function named() { // 第三步：命名，圖一直動，名詞貼回剛才的操作
+    lessonFrame(L, C.name, `<div class="cp" id="cp"></div><div class="tagrow">${C.terms.map(t => `<span class="termtag">${t}</span>`).join('')}</div>${skipBtn}`); wire();
+    let k = 0; const paint = () => setEl('cp', C.pic(C.states[C.loop[k % C.loop.length]])); paint();
+    cptStop(); cptTimer = setInterval(() => { k++; if (document.getElementById('cp')) paint(); else cptStop(); }, 1100);
+    actionBtn('ck', '換一題試試').onclick = check;
+  }
+  function check() { // 第四步：換情境用新詞答；答錯回到操作
+    cptStop(); const K = C.check;
+    lessonFrame(L, K.q, `<div class="cp">${K.pic()}</div>${skipBtn}`); wire();
+    document.getElementById('actions').innerHTML = `<div class="choices">${K.opts.map((o, i) => `<button class="choice" data-c5="${i}">${nums(o)}</button>`).join('')}</div>`;
+    document.querySelectorAll('[data-c5]').forEach(b => b.onclick = () => {
+      if (+b.dataset.c5 === K.a) { sfx.good(); setMsg(nums(K.ok), 'good'); seenCpt()[key] = 1; save(); document.getElementById('skipc').hidden = true; actionBtn('fin', '開始玩').onclick = done; return; }
+      sfx.retry(); setMsg(nums(K.why), 'hint'); actionBtn('bk', '回去再動手看看').onclick = op;
+    });
+  }
+  op();
+}
+function conceptThen(q, then) { // 第一次碰到這個題型，自動播；已看過就不再播
+  const key = q.kind + ':' + q.mode, C = CONCEPTS.find(c => c.when.includes(key) && !seenCpt()[c.key]);
+  if (!C) return then();
+  runConcept(C.key, () => conceptThen(q, then));
+}
+function viewConcepts(g, back) { // 重看
+  const list = g ? conceptsOf(g) : CONCEPTS;
+  window.scrollTo(0, 0);
+  $app.innerHTML = `<div class="top"><button class="icon-btn" id="bkc" aria-label="回去">⌂</button><h2 class="page-h">新概念小故事</h2></div><p class="tag">想再看一次哪一個？</p><div class="lessons">${list.map(c => `<button class="lesson" data-rc="${c.key}"><span class="l-t"><b>${c.title}</b><small>${c.terms.join('、')}・${GAMES[c.game].name}</small></span><em class="sem">${GAMES[c.game].sem}</em>${seenCpt()[c.key] ? '<span class="badge in">✓</span>' : ''}</button>`).join('')}</div>`;
+  document.getElementById('bkc').onclick = back;
+  document.querySelectorAll('[data-rc]').forEach(b => b.onclick = () => runConcept(b.dataset.rc, () => viewConcepts(g, back)));
+}
 function viewLessons() {
   window.scrollTo(0, 0);
   $app.innerHTML = `<div class="top"><button class="icon-btn" id="home" aria-label="回地圖">⌂</button><h2 class="page-h">單位教室</h2></div>
@@ -1986,7 +2149,7 @@ function viewTitle() {
   $app.innerHTML = `<div class="title" style="${bgStyle(S.bossDone ? 'finale' : 'sky_dark')}">
     ${S.bossDone ? '' : '<div class="drift d1"></div><div class="drift d2"></div>'}
     <div class="flies">${flies}</div>
-    <div class="title-top"><p class="kicker">目標：1 平方公里</p><h1 class="logo">數感月球城</h1></div>
+    <div class="title-top"><p class="kicker">把月球城蓋到 1 平方公里大</p><h1 class="logo">數感月球城</h1></div>
     ${artImg('liang_cheer', 'title-hero')}
     <div class="title-bottom">
       <button class="btn big" id="start">${S.opened ? '繼續冒險' : '開始冒險'}</button>
@@ -2091,7 +2254,7 @@ function viewParent() {
   </div>`;
   document.getElementById('snd').onchange = e => { S.sound = e.target.checked; save(); };
   document.getElementById('reset').onclick = () => {
-    if (confirm('確定清除所有星星和紀錄？')) { S.stars = 0; S.rec = {}; S.log = []; S.prog = {}; S.opened = false; S.bossDone = false; S.bossSeen = false; S.s2Seen = false; S.stamps = {}; S.fast = {}; S.quiz = {}; S.grandSeen = false; S.learned = {}; save(); viewParent(); }
+    if (confirm('確定清除所有星星和紀錄？')) { S.stars = 0; S.rec = {}; S.log = []; S.prog = {}; S.opened = false; S.bossDone = false; S.bossSeen = false; S.s2Seen = false; S.stamps = {}; S.fast = {}; S.quiz = {}; S.grandSeen = false; S.seenCpt = {}; S.learned = {}; save(); viewParent(); }
   };
   document.getElementById('out').onclick = () => go('');
 }
